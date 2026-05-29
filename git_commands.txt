@@ -1,0 +1,12 @@
+# 🔄 Git Commands for Syncing FRIDAY with Original Repo
+
+Run these commands in your project folder when you want to get the latest updates from the original repository (FatihMakes/Mark-XXXIX):
+
+## 1. Fetch latest changes from the original repo
+git fetch upstream
+
+## 2. Merge those changes into your local branch
+git merge upstream/main
+
+## 3. Push the merged updates to your private FRIDAY repo
+git push origin main

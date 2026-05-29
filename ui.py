@@ -20,7 +20,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QBrush, QColor, QDragEnterEvent, QDropEvent, QFont, QFontDatabase,
     QKeySequence, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
-    QRadialGradient, QShortcut,
+    QRadialGradient, QShortcut, QTextCursor,
 )
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
@@ -71,6 +71,23 @@ class C:
 
 def qcol(h: str, a: int = 255) -> QColor:
     c = QColor(h); c.setAlpha(a); return c
+
+class StreamRedirector(QObject):
+    text_written = pyqtSignal(str)
+
+    def __init__(self, stream):
+        super().__init__()
+        self.stream = stream
+
+    def write(self, text):
+        if self.stream:
+            self.stream.write(text)
+            self.stream.flush()
+        self.text_written.emit(text)
+
+    def flush(self):
+        if self.stream:
+            self.stream.flush()
 
 class _SysMetrics:
     def __init__(self):
@@ -453,7 +470,7 @@ class HudCanvas(QWidget):
             p.setPen(QPen(qcol(C.PRI, min(255, int(self._halo * 2))), 1))
             p.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
             p.drawText(QRectF(cx - 80, cy - 14, 160, 28),
-                       Qt.AlignmentFlag.AlignCenter, "J.A.R.V.I.S")
+                       Qt.AlignmentFlag.AlignCenter, "F.R.I.D.A.Y")
 
         # particles
         for pt in self._particles:
@@ -888,7 +905,7 @@ class SetupOverlay(QWidget):
             return w
 
         layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 13, True))
-        layout.addWidget(_lbl("Configure J.A.R.V.I.S. before first boot.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Configure F.R.I.D.A.Y before first boot.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -990,7 +1007,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, face_path: str):
         super().__init__()
-        self.setWindowTitle("J.A.R.V.I.S — MARK XXXIX")
+        self.setWindowTitle("FRIDAY by Vidaaant")
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
@@ -1030,6 +1047,22 @@ class MainWindow(QMainWindow):
         root.addLayout(body, stretch=1)
         root.addWidget(self._build_footer())
 
+        self._term_overlay = QTextEdit(self.centralWidget())
+        self._term_overlay.setReadOnly(True)
+        self._term_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._term_overlay.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._term_overlay.setStyleSheet(f"background: transparent; color: {C.GREEN}; border: none;")
+        self._term_overlay.setFont(QFont("Courier New", 8))
+        self._term_overlay.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._term_overlay.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self._stdout_redir = StreamRedirector(sys.stdout)
+        self._stderr_redir = StreamRedirector(sys.stderr)
+        sys.stdout = self._stdout_redir
+        sys.stderr = self._stderr_redir
+        self._stdout_redir.text_written.connect(self._append_term)
+        self._stderr_redir.text_written.connect(self._append_term)
+
         self._clock_tmr = QTimer(self)
         self._clock_tmr.timeout.connect(self._tick_clock)
         self._clock_tmr.start(1000)
@@ -1062,6 +1095,15 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        
+        if hasattr(self, '_term_overlay') and self._term_overlay:
+            cw = self.centralWidget()
+            hud_w = cw.width() - _LEFT_W - _RIGHT_W
+            tw, th = int(hud_w * 0.4), int(cw.height() * 0.4)
+            x = _LEFT_W + hud_w - tw - 16
+            y = 54 + 16
+            self._term_overlay.setGeometry(x, y, tw, th)
+
         if self._overlay and self._overlay.isVisible():
             ow, oh = 460, 390
             cw = self.centralWidget()
@@ -1070,6 +1112,13 @@ class MainWindow(QMainWindow):
                 (cw.height() - oh) // 2,
                 ow, oh,
             )
+
+    def _append_term(self, text: str):
+        if hasattr(self, '_term_overlay') and self._term_overlay:
+            cur = self._term_overlay.textCursor()
+            cur.movePosition(QTextCursor.MoveOperation.End)
+            cur.insertText(text)
+            self._term_overlay.setTextCursor(cur)
 
     def _update_metrics(self):
         snap = _metrics.snapshot()
@@ -1139,12 +1188,12 @@ class MainWindow(QMainWindow):
         lay.addStretch()
 
         mid = QVBoxLayout(); mid.setSpacing(1)
-        title = QLabel("J.A.R.V.I.S")
+        title = QLabel("F.R.I.D.A.Y")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont("Courier New", 17, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         mid.addWidget(title)
-        sub = QLabel("Just A Rather Very Intelligent System")
+        sub = QLabel("ITS NOT A COPIED NAME FR")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setFont(QFont("Courier New", 7))
         sub.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
@@ -1349,9 +1398,9 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
         lay.addStretch()
-        lay.addWidget(_fl("FatihMakes Industries  ·  MARK XXXIX  ·  CLASSIFIED"))
+        lay.addWidget(_fl("FRIDAY  ·  MARK XXXIX  ·  CLASSIFIED"))
         lay.addStretch()
-        lay.addWidget(_fl("© FATIHMAKES", C.PRI_DIM))
+        lay.addWidget(_fl("© Vidaaant", C.PRI_DIM))
         return w
 
     def _on_file_selected(self, path: str):

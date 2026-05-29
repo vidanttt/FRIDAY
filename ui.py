@@ -81,8 +81,11 @@ class StreamRedirector(QObject):
 
     def write(self, text):
         if self.stream:
-            self.stream.write(text)
-            self.stream.flush()
+            try:
+                self.stream.write(text)
+                self.stream.flush()
+            except Exception:
+                pass
         self.text_written.emit(text)
 
     def flush(self):
@@ -262,7 +265,6 @@ _metrics = _SysMetrics()
 class HudCanvas(QWidget):
     def __init__(self, face_path: str, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setMinimumSize(300, 300)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -363,7 +365,6 @@ class HudCanvas(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), qcol(C.BG))
 
         W, H = self.width(), self.height()
         cx, cy = W / 2, H / 2
@@ -1004,6 +1005,7 @@ class SetupOverlay(QWidget):
 class MainWindow(QMainWindow):
     _log_sig   = pyqtSignal(str)
     _state_sig = pyqtSignal(str)
+    _mic_sig   = pyqtSignal(float)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1055,6 +1057,11 @@ class MainWindow(QMainWindow):
         self._term_overlay.setFont(QFont("Courier New", 8))
         self._term_overlay.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._term_overlay.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._term_overlay.stackUnder(self.hud)
+
+        self._term_queue = ""
+        self._term_tmr = QTimer(self)
+        self._term_tmr.timeout.connect(self._step_term)
 
         self._stdout_redir = StreamRedirector(sys.stdout)
         self._stderr_redir = StreamRedirector(sys.stderr)
@@ -1076,6 +1083,7 @@ class MainWindow(QMainWindow):
 
         self._log_sig.connect(self._log.append_log)
         self._state_sig.connect(self._apply_state)
+        self._mic_sig.connect(self._update_mic_bar)
 
         self._overlay: SetupOverlay | None = None
         self._ready = self._check_config()
@@ -1115,10 +1123,36 @@ class MainWindow(QMainWindow):
 
     def _append_term(self, text: str):
         if hasattr(self, '_term_overlay') and self._term_overlay:
-            cur = self._term_overlay.textCursor()
-            cur.movePosition(QTextCursor.MoveOperation.End)
-            cur.insertText(text)
-            self._term_overlay.setTextCursor(cur)
+            self._term_queue += text
+            if not self._term_tmr.isActive():
+                self._term_tmr.start(20)
+
+    def _step_term(self):
+        if not hasattr(self, '_term_overlay') or not self._term_overlay:
+            if hasattr(self, '_term_tmr'):
+                self._term_tmr.stop()
+            return
+        if not self._term_queue:
+            self._term_tmr.stop()
+            return
+
+        idx = -1
+        for i, c in enumerate(self._term_queue):
+            if c in " \n\t":
+                idx = i
+                break
+        
+        if idx == -1:
+            chunk = self._term_queue
+            self._term_queue = ""
+        else:
+            chunk = self._term_queue[:idx+1]
+            self._term_queue = self._term_queue[idx+1:]
+            
+        cur = self._term_overlay.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        cur.insertText(chunk)
+        self._term_overlay.setTextCursor(cur)
 
     def _update_metrics(self):
         snap = _metrics.snapshot()
@@ -1239,9 +1273,10 @@ class MainWindow(QMainWindow):
         self._bar_net = MetricBar("NET", C.GREEN)
         self._bar_gpu = MetricBar("GPU", C.ACC)
         self._bar_tmp = MetricBar("TMP", "#ff6688")
+        self._bar_mic = MetricBar("MIC", C.GREEN)
 
         for bar in [self._bar_cpu, self._bar_mem, self._bar_net,
-                    self._bar_gpu, self._bar_tmp]:
+                    self._bar_gpu, self._bar_tmp, self._bar_mic]:
             lay.addWidget(bar)
 
         lay.addSpacing(4)
@@ -1462,6 +1497,10 @@ class MainWindow(QMainWindow):
         self.hud.state    = state
         self.hud.speaking = (state == "SPEAKING")
 
+    def _update_mic_bar(self, vol: float):
+        if hasattr(self, '_bar_mic'):
+            self._bar_mic.set_value(vol, f"{vol:.0f}")
+
     def _check_config(self) -> bool:
         if not API_FILE.exists(): return False
         try:
@@ -1536,6 +1575,9 @@ class JarvisUI:
 
     def set_state(self, state: str):
         self._win._state_sig.emit(state)
+
+    def update_mic_volume(self, vol: float):
+        self._win._mic_sig.emit(vol)
 
     def write_log(self, text: str):
         self._win._log_sig.emit(text)

@@ -709,6 +709,14 @@ class JarvisLive:
         loop = asyncio.get_event_loop()
 
         def callback(indata, frames, time_info, status):
+            if self.ui.muted:
+                self.ui.update_mic_volume(0.0)
+            else:
+                import numpy as np
+                rms = np.linalg.norm(indata) / np.sqrt(len(indata))
+                vol_pct = min(100.0, (rms / 4000.0) * 100)
+                self.ui.update_mic_volume(vol_pct)
+
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
             if not jarvis_speaking and not self.ui.muted:

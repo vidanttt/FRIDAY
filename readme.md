@@ -45,6 +45,17 @@ git clone https://github.com/FatihMakes/Mark-XXXIX.git
 cd Mark-XXXIX
 pip install -r requirements.txt
 playwright install
+```
+
+Then configure your API key:
+
+```bash
+cp config/api_keys.example.json config/api_keys.json
+```
+
+Open `config/api_keys.json` and replace `YOUR_GEMINI_API_KEY_HERE` with your [free Gemini API key](https://aistudio.google.com/apikey). Set `os_system` to `windows`, `mac`, or `linux`.
+
+```bash
 python main.py
 ```
 
